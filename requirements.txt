@@ -1,0 +1,14 @@
+# 核心依赖
+pydantic>=2.0
+pyyaml>=6.0
+requests>=2.31
+
+# YouTube 字幕获取
+youtube-transcript-api>=0.6
+
+# Bilibili 视频元信息与字幕：直接 HTTP 调用公开 API（无需额外SDK）
+
+# 字幕获取降级方案：下载音频 + 本地语音识别（当官方字幕接口拿不到字幕时）
+yt-dlp>=2024.1
+faster-whisper>=1.0
+imageio-ffmpeg>=0.5

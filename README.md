@@ -28,6 +28,29 @@ pip install -r requirements.txt
 
 无需系统安装 ffmpeg——`imageio-ffmpeg` 会提供便携版 ffmpeg 二进制。
 
+## 运行（推荐：一条命令）
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...        # 摘要要调 LLM，没有它跑不了
+./handle "https://www.bilibili.com/video/BV1Ji9aB4Eu2"
+```
+
+产物落在 `output/<短标题>/`（短标题由 LLM 从原标题压成 5~10 字）：
+
+```
+output/探秘Claude Code/
+├── 探秘Claude Code.md   # 总结（文件名 = 视频标题）
+├── 口播稿.md             # 字幕/转写文本，带时间戳
+├── audio.mp3            # 仅走了「下载转写」路径时才有
+├── trace.json           # 审计记录
+└── memory_suggestions.json
+```
+
+**B 站需要登录态。** 字幕接口匿名一律返回空——那是「没登录」，不是「没字幕」。
+在浏览器登录 bilibili.com 即可（会自动读取 cookie），或 `export BILIBILI_SESSDATA=...`。
+没登录时 `handle` **不会**默默去跑几十分钟的 ASR，而是直接报错提示；
+确认某视频真的没字幕，再加 `--allow-asr`。
+
 ## 运行（"Agent-in-loop" 两阶段流水线）
 
 当前环境未接入真实 LLM API，流水线拆成两个独立脚本，中间由 AI 编码助手（或未来的真实 LLM API 调用）撰写摘要：
@@ -52,7 +75,9 @@ python runner/step2_finalize.py "<output_dir_name>"
 
 ## 已知限制
 
-1. **Bilibili 官方字幕接口在匿名状态下经常拿不到字幕**（AI 字幕多数需要登录态 SESSDATA cookie）。当前自动降级为本地语音识别，准确率不如官方字幕；如需更高精度可将 `--asr-model` 改为 `medium` 或 `large-v3`（更慢）。
-2. **当前未接入真实 LLM API**，摘要生成靠 "Agent-in-loop" 人工介入完成——这是 MVP 阶段的关键设计取舍，不是 bug。`trace.json` 中每条记录的 `mode` 字段（`normal` / `heuristic_fallback` / `agent_in_loop` / `local_asr:...`）诚实标注该步是否用了真实 LLM。
-3. `chunk_subtitles` 目前是纯时间窗口切分（YouTube 长视频建议 600 秒/段），不是语义边界切分。
-4. `workflows/video2doc.yaml` 只是说明性文档，没有动态执行引擎；`runner/` 下的两个脚本硬编码执行顺序。
+1. **B 站字幕接口偶发串台**——同一个 `(aid, cid, bvid)` 连续请求，实测出现过 3 种不同 `sub_id`，其中有的内容和时长跟目标视频毫无关系（一份 54:35 的字幕混进 47:45 的视频），还会返回空列表或空 `subtitle_url`。危险在于**它是静默的**：你会拿到一份语法完全正常、但属于另一个视频的字幕。`fetch_subtitle_bilibili` 因此**强制用视频时长双向校验**（字幕末尾时间戳必须落在时长的 90%–102% 区间，上下限都要卡——只卡下限会放过「比视频还长」的串台字幕），最多重试 12 次；校验不过宁可返回空让上层降级，也不返回不可信的字幕。
+2. **B 站字幕需要登录态**，匿名一律为空。这不是「没字幕」，是没登录——`no_subtitle:not_logged_in` 与 `no_subtitle:none_available` 是分开标注的，处置完全不同。
+3. **摘要必须有 LLM 凭证**，没有就直接报错，不再降级。（原来的启发式抽取式降级用 `[A-Za-z']+` 分词，匹配不到任何中文字符，对中文视频只会产出「看着像总结的垃圾」——静默的低质量比直接失败更糟，故已删除。）
+4. 官方 AI 字幕本身也非人工校对，英文术语仍有误差（Claude Code→「可靠 code」、agent→「AH」）。需要高精度时可与 Whisper 转写交叉比对。
+5. `chunk_subtitles` 是纯时间窗口切分，不是语义边界切分。
+6. `workflows/video2doc.yaml` 只是说明性文档，没有动态执行引擎；`runner/` 下的脚本硬编码执行顺序。

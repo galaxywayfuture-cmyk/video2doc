@@ -20,7 +20,11 @@ def fetch_youtube_title(video_id: str) -> str:
 
 
 def fetch_bilibili_info(video_id: str) -> dict:
-    """返回 {"title": str, "cid": int, "aid": int}。"""
+    """返回 {"title": str, "cid": int, "aid": int, "duration": int}。
+
+    duration（秒）是校验字幕是否属于本视频的关键依据——B 站字幕接口偶发串台，
+    会返回别的视频的字幕，只有比对时长才能识别出来。
+    """
     resp = requests.get(
         "https://api.bilibili.com/x/web-interface/view", params={"bvid": video_id}, headers=_HEADERS, timeout=10
     )
@@ -29,4 +33,9 @@ def fetch_bilibili_info(video_id: str) -> dict:
     if payload.get("code") != 0:
         raise RuntimeError(f"Bilibili API 返回错误: {payload.get('message')}")
     data = payload["data"]
-    return {"title": data.get("title", ""), "cid": data.get("cid"), "aid": data.get("aid")}
+    return {
+        "title": data.get("title", ""),
+        "cid": data.get("cid"),
+        "aid": data.get("aid"),
+        "duration": data.get("duration"),
+    }

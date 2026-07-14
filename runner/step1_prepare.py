@@ -43,7 +43,16 @@ from tools.parse_video_url import parse_video_url
 from tools.transcribe_audio import transcribe_audio
 
 
-def run(video_url: str, window_seconds: float, output_root: str = "output", asr_model: str = "small") -> Path:
+def run(
+    video_url: str,
+    window_seconds: float,
+    output_root: str = "output",
+    asr_model: str = "small",
+    allow_asr: bool = False,
+    dir_name: str | None = None,
+) -> Path:
+    """dir_name：覆盖输出目录名。handle.py 传入 LLM 生成的 5~10 字短标题，
+    以满足「文件夹名就是视频标题的缩写版」的约定；不传则退回机器命名。"""
     trace = TraceRecorder(url=video_url, platform="")
 
     parsed = _timed(trace, "parse_video_url", video_url, lambda: parse_video_url(video_url))
@@ -61,11 +70,23 @@ def run(video_url: str, window_seconds: float, output_root: str = "output", asr_
             trace, "fetch_subtitle_bilibili", parsed.video_id, lambda: fetch_subtitle_bilibili(parsed.video_id)
         )
 
-    dir_name = build_output_dir_name(parsed.platform, parsed.video_id, title)
+    dir_name = dir_name or build_output_dir_name(parsed.platform, parsed.video_id, title)
     out_dir = Path(output_root) / dir_name
     out_dir.mkdir(parents=True, exist_ok=True)
 
     if not raw_lines:
+        # ASR 很慢（长视频几十分钟起步），只有「确实没字幕可抓」时才值得走。
+        # 没登录导致的空字幕不属于这种情况——那是可以靠补登录态几秒钟解决的，
+        # 默认直接报错提示，而不是默默烧掉几十分钟 CPU。
+        if subtitle_source == "no_subtitle:not_logged_in" and not allow_asr:
+            trace.save(out_dir / "trace_partial.json")
+            raise RuntimeError(
+                "拿不到 B 站字幕，原因是**没有登录态**（本机浏览器里没有 bilibili 的 SESSDATA cookie）。\n"
+                "这不代表该视频没有字幕，只代表匿名请求看不到。请二选一：\n"
+                "  (a) 在浏览器里登录 bilibili.com，然后重跑（会自动读取浏览器 cookie）；\n"
+                "  (b) export BILIBILI_SESSDATA='<devtools 里复制的 SESSDATA>' 后重跑。\n"
+                "如果确认该视频就是没有字幕、执意要走本地语音识别（慢），加 --allow-asr 重跑。"
+            )
         raw_lines, subtitle_source = _fallback_to_local_asr(trace, video_url, out_dir, asr_model)
 
     trace.set_subtitle_source(subtitle_source)
@@ -139,9 +160,14 @@ def main():
     parser.add_argument("video_url")
     parser.add_argument("--window-seconds", type=float, default=300.0)
     parser.add_argument("--asr-model", default="small", help="faster-whisper 模型规格：tiny/base/small/medium/large-v3")
+    parser.add_argument(
+        "--allow-asr",
+        action="store_true",
+        help="没有登录态导致抓不到字幕时，仍允许降级为本地语音识别（很慢，默认关闭）",
+    )
     args = parser.parse_args()
 
-    out_dir = run(args.video_url, args.window_seconds, asr_model=args.asr_model)
+    out_dir = run(args.video_url, args.window_seconds, asr_model=args.asr_model, allow_asr=args.allow_asr)
     print(f"chunks.json 已生成: {out_dir.resolve() / 'chunks.json'}")
     print("下一步：由 Agent 读取 chunks.json，撰写 segment_summaries.json 与 global_summary.json")
 

@@ -34,7 +34,10 @@ from core.trace import TraceRecorder
 from tools.generate_markdown_doc import generate_markdown_doc
 
 
-def run(output_dir_name: str, output_root: str = "output") -> Path:
+def run(output_dir_name: str, output_root: str = "output", agent_mode: str = "agent_in_loop") -> Path:
+    # agent_mode 如实标注 segment/global 摘要是怎么来的：
+    #   "agent_in_loop"      —— 两阶段流水线里由人工/AI编码助手撰写
+    #   "heuristic_fallback" —— run_all.py 一条命令端到端时走的启发式抽取式降级
     out_dir = Path(output_root) / output_dir_name
 
     meta = json.loads((out_dir / "meta.json").read_text(encoding="utf-8"))
@@ -58,7 +61,7 @@ def run(output_dir_name: str, output_root: str = "output") -> Path:
             input_summary=f"chunk_id={seg.chunk_id}",
             output_summary=seg.summary[:120],
             duration_ms=0.0,
-            mode="agent_in_loop",
+            mode=agent_mode,
         )
 
     trace.record_tool_call(
@@ -66,14 +69,14 @@ def run(output_dir_name: str, output_root: str = "output") -> Path:
         input_summary=f"{len(segment_summaries)} segment summaries",
         output_summary=global_summary.title,
         duration_ms=0.0,
-        mode="agent_in_loop",
+        mode=agent_mode,
     )
 
     doc_meta = {
         "url": meta["url"],
         "platform": meta["platform"],
         "subtitle_source": meta["subtitle_source"],
-        "mode": "agent_in_loop",
+        "mode": agent_mode,
     }
     start_t = time.perf_counter()
     doc_markdown = generate_markdown_doc(global_summary, segment_summaries, doc_meta)

@@ -1,0 +1,61 @@
+# video2doc.yaml — 流程定义（说明性文档，当前由runner硬编码执行，未做动态解释器）
+
+name: video2doc
+description: 视频 URL → 结构化 Markdown 文档 + 审计记录 + 记忆建议
+
+steps:
+  - id: parse_url
+    type: tool
+    uses: tools.parse_video_url
+
+  - id: fetch_title
+    type: tool
+    uses: tools.fetch_video_title
+
+  - id: fetch_subtitle
+    type: tool
+    uses: tools.fetch_subtitle_youtube  # 或 fetch_subtitle_bilibili，按 platform 分支
+
+  - id: fallback_local_asr
+    type: tool
+    condition: fetch_subtitle 返回空列表(source=no_subtitle)
+    uses: [tools.download_audio, tools.transcribe_audio]
+
+  - id: normalize
+    type: tool
+    uses: tools.normalize_subtitles
+
+  - id: chunk
+    type: tool
+    uses: tools.chunk_subtitles
+
+  - id: segment_summaries
+    type: agent
+    uses: agents.SegmentSummaryAgent
+    # 对 chunk 步骤输出的每个 chunk 循环调用；当前由人工/AI编码助手代替真实LLM API
+
+  - id: global_summary
+    type: agent
+    uses: agents.GlobalSummaryAgent
+
+  - id: render_doc
+    type: tool
+    uses: tools.generate_markdown_doc
+
+  - id: emit_trace
+    type: hook
+    uses: core.trace
+
+  - id: emit_memory_suggestions
+    type: hook
+    uses: core.memory
+
+outputs:
+  - meta.json
+  - chunks.json
+  - transcript.md          # 仅ASR降级路径
+  - segment_summaries.json
+  - global_summary.json
+  - doc.md
+  - trace.json
+  - memory_suggestions.json

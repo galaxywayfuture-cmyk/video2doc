@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# handle <video_link> — 一条命令跑完整套视频总结流程。
+#
+#   ./handle "https://www.bilibili.com/video/BV1Ji9aB4Eu2"
+#
+# 产物：output/<短标题>/ —— 内含 <短标题>.md（总结）、口播稿.md、audio.mp3（仅走转写路径时）
+#
+# 其余参数原样透传给 runner/handle.py（如 --allow-asr、--window-seconds）。
+set -euo pipefail
+cd "$(dirname "$0")"
+exec .venv/bin/python runner/handle.py "$@"

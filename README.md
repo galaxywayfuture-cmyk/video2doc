@@ -23,8 +23,12 @@ core/     横切关注点：数据契约(schemas)、审计(trace)、记忆(memor
 ## 安装
 
 ```bash
-pip install -r requirements.txt
+python -m venv .venv
+.venv/bin/pip install -r requirements.txt
 ```
+
+**必须是 `.venv`。** `./handle` 写死了用 `.venv/bin/python` 启动（这样 ASR 那套重依赖
+不会污染系统环境），所以虚拟环境目录名就得叫 `.venv`、且装在仓库根目录。
 
 无需系统安装 ffmpeg——`imageio-ffmpeg` 会提供便携版 ffmpeg 二进制。
 
@@ -50,6 +54,29 @@ output/探秘Claude Code/
 在浏览器登录 bilibili.com 即可（会自动读取 cookie），或 `export BILIBILI_SESSDATA=...`。
 没登录时 `handle` **不会**默默去跑几十分钟的 ASR，而是直接报错提示；
 确认某视频真的没字幕，再加 `--allow-asr`。
+
+### 无字幕视频怎么跑
+
+有些视频 UP 主没传 CC 字幕、也没有 AI 字幕。这类视频只能走「下载音频 → 本地
+语音识别」的降级路径：
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+# 浏览器登录 bilibili.com（自动读 cookie），或 export BILIBILI_SESSDATA=...
+./handle "https://www.bilibili.com/video/BV1kvMe6dEVb" --allow-asr
+```
+
+- **为什么要加 `--allow-asr`**：没登录时抓不到字幕会被标成 `no_subtitle:not_logged_in`，
+  这是「补个登录态几秒钟就能解决」的情况，默认**不**烧几十分钟 CPU，所以直接报错。
+  只有你明确加 `--allow-asr`，才允许在这种情况下也降级去跑 ASR。
+  （已登录、且确认视频真没字幕时，来源是 `no_subtitle:none_verified`，会**自动**走 ASR，
+  这个 flag 加不加都行——但加上最稳妥，省得纠结当前是哪种情况。）
+- **慢**：`faster-whisper` 在 CPU 上按 int8 跑，十几分钟的视频通常要几分钟到十几分钟；
+  想更快/更准可调 `--asr-model tiny|base|small|medium|large-v3`（默认 `small`）。
+- **产物多一份 `audio.mp3`**，`trace.json` 里的 `subtitle_source` 会如实标成
+  `local_asr:...`，`口播稿.md` 是未经清洗的原始转写，仅供追溯参考。
+- **精度**：本地 ASR 不如官方字幕，专有名词/英文术语易出错；要高精度可拿产物里的
+  `口播稿.md` 和其它转写交叉比对。
 
 ## 运行（"Agent-in-loop" 两阶段流水线）
 
